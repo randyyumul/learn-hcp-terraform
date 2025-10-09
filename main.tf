@@ -43,6 +43,17 @@ module "vpc" {
   enable_dns_hostnames = true
 }
 
+# Allow outbound HTTPS from instances to VPC endpoints
+resource "aws_security_group_rule" "allow_https_to_endpoints" {
+  type                     = "egress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  security_group_id        = module.vpc.default_security_group_id
+  source_security_group_id = aws_security_group.ssm_endpoints.id
+  description              = "Allow HTTPS to SSM VPC endpoints"
+}
+
 # -----------------------------
 # 4️⃣ IAM Role for SSM
 # -----------------------------
@@ -146,25 +157,16 @@ resource "aws_instance" "app_server" {
     aws_vpc_endpoint.ec2messages
   ]
 
-  user_data = <<-EOF
-    #!/bin/bash
-    set -e
-    # wait a few seconds for networking to be ready
-    sleep 10
+user_data = <<-EOF
+  #!/bin/bash
+  # SSM Agent is pre-installed on Amazon Linux 2
+  # Just ensure it's running
+  systemctl restart amazon-ssm-agent
+  systemctl enable amazon-ssm-agent
 
-    # robust install: use S3-hosted RPM if yum package not present
-    if ! rpm -q amazon-ssm-agent >/dev/null 2>&1; then
-      curl -s -o /tmp/amazon-ssm-agent.rpm https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-      rpm -Uvh /tmp/amazon-ssm-agent.rpm || true
-    fi
-
-    # enable and start
-    systemctl enable amazon-ssm-agent || true
-    systemctl start amazon-ssm-agent || true
-
-    # write a small marker so you can see userdata succeeded
-    echo "ssm-install-$(date -u)" > /var/log/ssm-userdata-marker
-    EOF
+  # Verification marker
+  echo "SSM restarted at $(date -u)" > /var/log/ssm-userdata-marker
+  EOF
 
   tags = {
     Name = var.instance_name

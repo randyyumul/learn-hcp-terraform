@@ -15,3 +15,7 @@ output "instance_ami" {
   description = "AMI used to create the EC2 instance."
   value       = aws_instance.app_server.ami
 }
+
+output "ssm_endpoint_dns" {
+  value = aws_vpc_endpoint.ssm.dns_entry[0].dns_name
+}
