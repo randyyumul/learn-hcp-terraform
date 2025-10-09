@@ -73,14 +73,29 @@ resource "aws_iam_instance_profile" "ssm_profile" {
 # -----------------------------
 resource "aws_security_group" "ssm_endpoints" {
   name        = "ssm-endpoints-sg"
-  description = "Allow HTTPS to SSM endpoints"
+  description = "Security group attached to SSM interface endpoints"
   vpc_id      = module.vpc.vpc_id
 
+  # Allow inbound HTTPS from the instances' security group (default SG from module)
+  ingress {
+    description  = "Allow HTTPS from app instances"
+    from_port    = 443
+    to_port      = 443
+    protocol     = "tcp"
+    # allow from the instances' SG. If you later use a custom SG for instances, replace this.
+    security_groups = [module.vpc.default_security_group_id]
+  }
+
+  # Allow all outbound so endpoint ENIs can talk to AWS services
   egress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "ssm-endpoints-sg"
   }
 }
 
@@ -88,27 +103,30 @@ resource "aws_security_group" "ssm_endpoints" {
 # 6️⃣ VPC Endpoints for SSM (for private subnet)
 # -----------------------------
 resource "aws_vpc_endpoint" "ssm" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.us-west-2.ssm"
-  vpc_endpoint_type = "Interface"
-  subnet_ids        = module.vpc.private_subnets
-  security_group_ids = [aws_security_group.ssm_endpoints.id]
+  vpc_id               = module.vpc.vpc_id
+  service_name         = "com.amazonaws.us-west-2.ssm"
+  vpc_endpoint_type    = "Interface"
+  subnet_ids           = module.vpc.private_subnets
+  security_group_ids   = [aws_security_group.ssm_endpoints.id]
+  private_dns_enabled  = true
 }
 
 resource "aws_vpc_endpoint" "ssmmessages" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.us-west-2.ssmmessages"
-  vpc_endpoint_type = "Interface"
-  subnet_ids        = module.vpc.private_subnets
-  security_group_ids = [aws_security_group.ssm_endpoints.id]
+  vpc_id               = module.vpc.vpc_id
+  service_name         = "com.amazonaws.us-west-2.ssmmessages"
+  vpc_endpoint_type    = "Interface"
+  subnet_ids           = module.vpc.private_subnets
+  security_group_ids   = [aws_security_group.ssm_endpoints.id]
+  private_dns_enabled  = true
 }
 
 resource "aws_vpc_endpoint" "ec2messages" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.us-west-2.ec2messages"
-  vpc_endpoint_type = "Interface"
-  subnet_ids        = module.vpc.private_subnets
-  security_group_ids = [aws_security_group.ssm_endpoints.id]
+  vpc_id               = module.vpc.vpc_id
+  service_name         = "com.amazonaws.us-west-2.ec2messages"
+  vpc_endpoint_type    = "Interface"
+  subnet_ids           = module.vpc.private_subnets
+  security_group_ids   = [aws_security_group.ssm_endpoints.id]
+  private_dns_enabled  = true
 }
 
 # -----------------------------
@@ -121,13 +139,32 @@ resource "aws_instance" "app_server" {
   vpc_security_group_ids = [module.vpc.default_security_group_id]
   iam_instance_profile   = aws_iam_instance_profile.ssm_profile.name
 
+  # ensure endpoints are created first
+  depends_on = [
+    aws_vpc_endpoint.ssm,
+    aws_vpc_endpoint.ssmmessages,
+    aws_vpc_endpoint.ec2messages
+  ]
+
   user_data = <<-EOF
-              #!/bin/bash
-              sudo yum update -y
-              sudo yum install -y amazon-ssm-agent
-              sudo systemctl enable amazon-ssm-agent
-              sudo systemctl start amazon-ssm-agent
-              EOF
+    #!/bin/bash
+    set -e
+    # wait a few seconds for networking to be ready
+    sleep 10
+
+    # robust install: use S3-hosted RPM if yum package not present
+    if ! rpm -q amazon-ssm-agent >/dev/null 2>&1; then
+      curl -s -o /tmp/amazon-ssm-agent.rpm https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+      rpm -Uvh /tmp/amazon-ssm-agent.rpm || true
+    fi
+
+    # enable and start
+    systemctl enable amazon-ssm-agent || true
+    systemctl start amazon-ssm-agent || true
+
+    # write a small marker so you can see userdata succeeded
+    echo "ssm-install-$(date -u)" > /var/log/ssm-userdata-marker
+    EOF
 
   tags = {
     Name = var.instance_name
