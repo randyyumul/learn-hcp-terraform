@@ -140,6 +140,18 @@ resource "aws_vpc_endpoint" "ec2messages" {
   private_dns_enabled  = true
 }
 
+# ✨ NEW: S3 Gateway VPC Endpoint (FREE - allows access to S3 and yum repos)
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.us-west-2.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = module.vpc.private_route_table_ids
+
+  tags = {
+    Name = "s3-gateway-endpoint"
+  }
+}
+
 # -----------------------------
 # 7️⃣ EC2 Instance in Private Subnet with Amazon Linux 2
 # -----------------------------
@@ -154,7 +166,8 @@ resource "aws_instance" "app_server" {
   depends_on = [
     aws_vpc_endpoint.ssm,
     aws_vpc_endpoint.ssmmessages,
-    aws_vpc_endpoint.ec2messages
+    aws_vpc_endpoint.ec2messages,
+    aws_vpc_endpoint.s3
   ]
 
 user_data = <<-EOF
@@ -184,3 +197,7 @@ output "ec2_private_ip" {
   value = aws_instance.app_server.private_ip
 }
 
+output "s3_endpoint_id" {
+  value       = aws_vpc_endpoint.s3.id
+  description = "S3 VPC Endpoint ID"
+}
