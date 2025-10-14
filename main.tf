@@ -13,14 +13,14 @@ data "aws_availability_zones" "available" {
 }
 
 # -----------------------------
-# 2️⃣ Amazon Linux 2 AMI
+# 2️⃣ Amazon Linux 2023 AMI
 # -----------------------------
-data "aws_ami" "amazon_linux_2" {
+data "aws_ami" "amazon_linux_2023" {
   most_recent = true
 
   filter {
     name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+    values = ["al2023-ami-*-x86_64"]
   }
 
   owners = ["amazon"]
@@ -259,7 +259,7 @@ resource "aws_vpc_endpoint" "s3" {
 # 8️⃣ EC2 Instance in Private Subnet with Amazon Linux 2
 # -----------------------------
 resource "aws_instance" "app_server" {
-  ami                    = data.aws_ami.amazon_linux_2.id
+  ami                    = data.aws_ami.amazon_linux_2023.id
   instance_type          = var.instance_type
   subnet_id              = module.vpc.private_subnets[0]
   vpc_security_group_ids = [module.vpc.default_security_group_id]
@@ -275,13 +275,13 @@ resource "aws_instance" "app_server" {
 
   user_data = <<-EOF
     #!/bin/bash
-    # SSM Agent is pre-installed on Amazon Linux 2
+    # SSM Agent is pre-installed on Amazon Linux 2023
     # Just ensure it's running
     systemctl restart amazon-ssm-agent
     systemctl enable amazon-ssm-agent
 
-    # Install AWS CLI v2 (in case it's not already installed)
-    yum install -y aws-cli
+    # Install AWS CLI (if not already installed)
+    which aws || yum install -y aws-cli
 
     # Verification marker
     echo "SSM restarted at $(date -u)" > /var/log/ssm-userdata-marker
