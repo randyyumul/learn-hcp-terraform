@@ -43,6 +43,15 @@ module "vpc" {
   enable_dns_hostnames = true
 }
 
+# -----------------------------
+# 3.5️⃣ Security Group Rules for Egress
+# -----------------------------
+
+# Data source to get S3 prefix list
+data "aws_prefix_list" "s3" {
+  name = "com.amazonaws.us-west-2.s3"
+}
+
 # Allow outbound HTTPS from instances to VPC endpoints
 resource "aws_security_group_rule" "allow_https_to_endpoints" {
   type                     = "egress"
@@ -52,6 +61,17 @@ resource "aws_security_group_rule" "allow_https_to_endpoints" {
   security_group_id        = module.vpc.default_security_group_id
   source_security_group_id = aws_security_group.ssm_endpoints.id
   description              = "Allow HTTPS to SSM VPC endpoints"
+}
+
+# ✨ FIX: Allow outbound HTTPS to S3 VPC endpoint
+resource "aws_security_group_rule" "allow_https_to_s3" {
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  security_group_id = module.vpc.default_security_group_id
+  prefix_list_ids   = [data.aws_prefix_list.s3.id]
+  description       = "Allow HTTPS to S3 VPC endpoint"
 }
 
 # -----------------------------
@@ -114,7 +134,7 @@ resource "aws_iam_role_policy_attachment" "ssm_core" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# ✨ NEW: S3 Access Policy for Kong Packages
+# ✨ S3 Access Policy for Kong Packages
 resource "aws_iam_role_policy" "s3_access" {
   name = "s3-kong-packages-access"
   role = aws_iam_role.ssm_role.id
