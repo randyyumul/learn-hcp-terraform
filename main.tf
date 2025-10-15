@@ -229,7 +229,7 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_endpoint_type = "Gateway"
   route_table_ids   = module.vpc.private_route_table_ids
 
-  # Optional: Restrict to specific bucket(s)
+  # Updated policy to allow AL2023 repos
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -243,8 +243,10 @@ resource "aws_vpc_endpoint" "s3" {
         Resource = [
           aws_s3_bucket.kong_packages.arn,
           "${aws_s3_bucket.kong_packages.arn}/*",
-          "arn:aws:s3:::amazonlinux*",  # Allow access to Amazon Linux repos
-          "arn:aws:s3:::amazonlinux*/*"
+          "arn:aws:s3:::amazonlinux*",      # Amazon Linux 2 repos
+          "arn:aws:s3:::amazonlinux*/*",
+          "arn:aws:s3:::al2023-repos-*",    # Amazon Linux 2023 repos
+          "arn:aws:s3:::al2023-repos-*/*"
         ]
       }
     ]
